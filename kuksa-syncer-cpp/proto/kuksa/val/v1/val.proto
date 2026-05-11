@@ -1,0 +1,97 @@
+// Copyright (c) 2025 Eclipse Foundation.
+//
+// SPDX-License-Identifier: MIT
+
+syntax = "proto3";
+package kuksa.val.v1;
+
+import "kuksa/val/v1/types.proto";
+import "google/protobuf/timestamp.proto";
+
+// ─── View selector ──────────────────────────────────────────────────────────
+enum View {
+  VIEW_UNSPECIFIED    = 0;
+  VIEW_CURRENT_VALUE  = 1;
+  VIEW_TARGET_VALUE   = 2;
+  VIEW_METADATA       = 3;
+  VIEW_FIELDS         = 10;
+  VIEW_ALL            = 20;
+}
+
+// ─── Error types ────────────────────────────────────────────────────────────
+message Error {
+  uint32 code    = 1;
+  bytes  reason  = 2;   // bytes avoids UTF-8 validation (databroker 0.4.4 sends raw bytes here)
+  string message = 3;
+}
+
+message SetError {
+  string path  = 1;
+  Error  error = 2;
+}
+
+// ─── Get RPC ────────────────────────────────────────────────────────────────
+message EntryRequest {
+  string         path   = 1;
+  View           view   = 2;
+  repeated Field fields = 3;
+}
+
+message GetRequest {
+  repeated EntryRequest entries = 1;
+}
+
+message DataEntry {
+  string    path            = 1;
+  Datapoint value           = 2;
+  Datapoint actuator_target = 3;
+  Metadata  metadata        = 4;
+}
+
+message GetResponse {
+  repeated DataEntry entries = 1;
+  repeated Error     errors  = 2;
+}
+
+// ─── Set RPC ────────────────────────────────────────────────────────────────
+message SetRequest {
+  repeated EntryUpdate updates = 1;
+}
+
+message SetResponse {
+  repeated SetError errors = 2;
+}
+
+// ─── Subscribe RPC ──────────────────────────────────────────────────────────
+message SubscribeEntry {
+  string         path   = 1;
+  View           view   = 2;
+  repeated Field fields = 3;
+}
+
+message SubscribeRequest {
+  repeated SubscribeEntry entries = 1;
+}
+
+message SubscribeResponse {
+  repeated EntryUpdate updates = 1;
+}
+
+// ─── Server info RPC ────────────────────────────────────────────────────────
+message GetServerInfoRequest  {}
+message GetServerInfoResponse {
+  string name    = 1;
+  string version = 2;
+}
+
+// ─── VAL service ────────────────────────────────────────────────────────────
+service VAL {
+  // Read one or more entries
+  rpc Get(GetRequest)            returns (GetResponse);
+  // Write one or more entries
+  rpc Set(SetRequest)            returns (SetResponse);
+  // Subscribe to changes (server-streaming)
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+  // Retrieve server information
+  rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
+}

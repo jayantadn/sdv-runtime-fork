@@ -1,1 +1,38 @@
-[]
+[
+    {
+        "signal": "Vehicle.Body.Hood.IsOpen",
+        "value": "False"
+    },
+    {
+        "signal": "Vehicle.Cabin.HVAC.Station.Row1.Driver.FanSpeed",
+        "value": "0"
+    },
+    {
+        "signal": "Vehicle.ADAS.CruiseControl.SpeedSet",
+        "value": "0"
+    },
+    {
+        "signal": "Vehicle.Cabin.HVAC.Station.Row2.Driver.FanSpeed",
+        "value": "0"
+    },
+    {
+        "signal": "Vehicle.Cabin.Door.Row1.DriverSide.IsOpen",
+        "value": "False"
+    },
+    {
+        "signal": "Vehicle.Cabin.Door.Row1.PassengerSide.IsOpen",
+        "value": "False"
+    },
+    {
+        "signal": "Vehicle.Body.Lights.Beam.High.IsOn",
+        "value": "False"
+    },
+    {
+        "signal": "Vehicle.Body.Trunk.Rear.IsOpen",
+        "value": "False"
+    },
+    {
+        "signal": "Vehicle.Cabin.Seat.Row1.DriverSide.Position",
+        "value": "0"
+    }
+]

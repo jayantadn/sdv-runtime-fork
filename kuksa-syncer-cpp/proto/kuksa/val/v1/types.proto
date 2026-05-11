@@ -1,0 +1,155 @@
+// Copyright (c) 2025 Eclipse Foundation.
+//
+// SPDX-License-Identifier: MIT
+
+syntax = "proto3";
+package kuksa.val.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ─── Array wrapper types ────────────────────────────────────────────────────
+message StringArray  { repeated string  values = 1; }
+message BoolArray    { repeated bool    values = 1; }
+message Int32Array   { repeated sint32  values = 1; }
+message Int64Array   { repeated sint64  values = 1; }
+message Uint32Array  { repeated uint32  values = 1; }
+message Uint64Array  { repeated uint64  values = 1; }
+message FloatArray   { repeated float   values = 1; }
+message DoubleArray  { repeated double  values = 1; }
+
+// ─── Datapoint ──────────────────────────────────────────────────────────────
+message Datapoint {
+  google.protobuf.Timestamp timestamp = 1;
+  oneof value {
+    string      string       = 11;
+    bool        bool         = 12;
+    sint32      int32        = 13;
+    sint64      int64        = 14;
+    uint32      uint32       = 15;
+    uint64      uint64       = 16;
+    float       float        = 17;
+    double      double       = 18;
+    StringArray string_array = 21;
+    BoolArray   bool_array   = 22;
+    Int32Array  int32_array  = 23;
+    Int64Array  int64_array  = 24;
+    Uint32Array uint32_array = 25;
+    Uint64Array uint64_array = 26;
+    FloatArray  float_array  = 27;
+    DoubleArray double_array = 28;
+  }
+}
+
+// ─── Data type enumeration ──────────────────────────────────────────────────
+enum DataType {
+  DATA_TYPE_UNSPECIFIED      = 0;
+  DATA_TYPE_STRING           = 1;
+  DATA_TYPE_BOOLEAN          = 2;
+  DATA_TYPE_INT8             = 3;
+  DATA_TYPE_INT16            = 4;
+  DATA_TYPE_INT32            = 5;
+  DATA_TYPE_INT64            = 6;
+  DATA_TYPE_UINT8            = 7;
+  DATA_TYPE_UINT16           = 8;
+  DATA_TYPE_UINT32           = 9;
+  DATA_TYPE_UINT64           = 10;
+  DATA_TYPE_FLOAT            = 11;
+  DATA_TYPE_DOUBLE           = 12;
+  DATA_TYPE_TIMESTAMP        = 13;
+  DATA_TYPE_STRING_ARRAY     = 20;
+  DATA_TYPE_BOOLEAN_ARRAY    = 21;
+  DATA_TYPE_INT8_ARRAY       = 22;
+  DATA_TYPE_INT16_ARRAY      = 23;
+  DATA_TYPE_INT32_ARRAY      = 24;
+  DATA_TYPE_INT64_ARRAY      = 25;
+  DATA_TYPE_UINT8_ARRAY      = 26;
+  DATA_TYPE_UINT16_ARRAY     = 27;
+  DATA_TYPE_UINT32_ARRAY     = 28;
+  DATA_TYPE_UINT64_ARRAY     = 29;
+  DATA_TYPE_FLOAT_ARRAY      = 30;
+  DATA_TYPE_DOUBLE_ARRAY     = 31;
+  DATA_TYPE_TIMESTAMP_ARRAY  = 32;
+}
+
+// ─── Entry type ─────────────────────────────────────────────────────────────
+enum EntryType {
+  ENTRY_TYPE_UNSPECIFIED = 0;
+  ENTRY_TYPE_ATTRIBUTE   = 1;
+  ENTRY_TYPE_SENSOR      = 2;
+  ENTRY_TYPE_ACTUATOR    = 3;
+}
+
+// ─── Metadata ───────────────────────────────────────────────────────────────
+message Sensor    {}
+message Actuator  {}
+message Attribute {}
+
+message ValueRestrictionString { repeated string  allowed_values = 1; }
+message ValueRestrictionInt    {
+  sint64          min            = 1;
+  sint64          max            = 2;
+  repeated sint64 allowed_values = 3;
+}
+message ValueRestrictionUint   {
+  uint64          min            = 1;
+  uint64          max            = 2;
+  repeated uint64 allowed_values = 3;
+}
+message ValueRestrictionFloat  {
+  double          min            = 1;
+  double          max            = 2;
+}
+
+message ValueRestriction {
+  oneof type {
+    ValueRestrictionString string = 1;
+    ValueRestrictionInt    int    = 2;
+    ValueRestrictionUint   uint   = 3;
+    ValueRestrictionFloat  float  = 4;
+  }
+}
+
+message Metadata {
+  DataType         data_type         = 11;
+  EntryType        entry_type        = 12;
+  string           description       = 13;
+  string           comment           = 14;
+  string           deprecation       = 15;
+  string           unit              = 16;
+  ValueRestriction value_restriction = 17;
+  repeated Actuator  actuator        = 18;
+  repeated Sensor    sensor          = 19;
+  repeated Attribute attribute       = 20;
+}
+
+// ─── Entry / update ─────────────────────────────────────────────────────────
+message Entry {
+  string    path             = 1;
+  Datapoint value            = 2;
+  Datapoint actuator_target  = 3;
+  Metadata  metadata         = 4;
+}
+
+message EntryUpdate {
+  Entry          entry  = 1;
+  repeated Field fields = 2;
+}
+
+// ─── Field selector ─────────────────────────────────────────────────────────
+enum Field {
+  FIELD_UNSPECIFIED              = 0;
+  FIELD_PATH                     = 1;
+  FIELD_VALUE                    = 2;
+  FIELD_ACTUATOR_TARGET          = 3;
+  FIELD_METADATA                 = 4;
+  FIELD_METADATA_DATA_TYPE       = 10;
+  FIELD_METADATA_DESCRIPTION     = 11;
+  FIELD_METADATA_ENTRY_TYPE      = 12;
+  FIELD_METADATA_COMMENT         = 13;
+  FIELD_METADATA_DEPRECATION     = 14;
+  FIELD_METADATA_UNIT            = 15;
+  FIELD_METADATA_VALUE_RESTRICTION = 16;
+  FIELD_METADATA_ACTUATOR        = 17;
+  FIELD_METADATA_SENSOR          = 18;
+  FIELD_METADATA_ATTRIBUTE       = 19;
+}
