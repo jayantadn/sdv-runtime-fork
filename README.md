@@ -73,7 +73,7 @@ docker buildx create --driver docker-container --driver-opt network=host --drive
 
 docker buildx use mybuilder
 
-docker buildx build --push --platform linux/amd64,linux/arm64 -t eclipse-autowrx/sdv-runtime:latest -f Dockerfile .
+docker buildx build --push --platform linux/amd64,linux/arm64 -t eclipse-autowrx/sdv-runtime:latest -f Dockerfile.
 ```
 
 If you're outside of Bosch's enterprise network, you can skip the `http_proxy https_proxy` driver option. Otherwise, make sure you set up your local proxy beforehand.
