@@ -14,7 +14,7 @@ Since it is a docker container, it can run on cloud, your PC or even on rapsberr
 - [Kit Manager](kit-manager/)
 - [Python](https://www.python.org/downloads/release/python-3100/) - `3.10`
 
-When you run this Docker container, all the tools mentioned above will be ready to use, and you will be connected to the playground natively.
+When you run this Docker container, all the tools mentioned above will be ready to use, and you will be connected to the playground natively .
 
 
 
