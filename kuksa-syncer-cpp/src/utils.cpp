@@ -117,16 +117,15 @@ void stopMockService(const std::string& pidFile) {
     }
 }
 
-void startMockService(const std::string& mockScript) {
+void startMockService(const std::string& binaryPath) {
     std::cout << "Starting mock provider..." << std::endl;
     pid_t child = ::fork();
     if (child == 0) {
-        // Detach from parent
+        // Detach from parent so the mock-provider survives syncer restarts
         ::setsid();
-        ::execl("/usr/bin/python3", "python3", mockScript.c_str(), nullptr);
-        // fallback to python
-        ::execl("/usr/bin/python", "python", mockScript.c_str(), nullptr);
-        ::_exit(127);
+        // Exec the compiled C++ mock-provider binary directly — no shell, no Python
+        ::execl(binaryPath.c_str(), binaryPath.c_str(), nullptr);
+        ::_exit(127); // execl failed
     } else if (child > 0) {
         std::cout << "Mock provider started (PID " << child << ")." << std::endl;
     } else {

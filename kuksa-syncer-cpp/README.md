@@ -1,3 +1,13 @@
+<!--
+  Copyright (c) 2025 Eclipse Foundation.
+
+  This program and the accompanying materials are made available under the
+  terms of the MIT License which is available at
+  https://opensource.org/licenses/MIT.
+
+  SPDX-License-Identifier: MIT
+-->
+
 # kuksa-syncer-cpp
 
 C++17 port of the Python `kuksa-syncer` runtime orchestrator component of the
@@ -117,10 +127,11 @@ Shared state (`lsOfRunner_`, `lsOfApiSubscriber_`) is protected by a single
 
 ## Notes on Python interop
 
-The `vehicle_model_manager` still shells out to the Python `velocitas`
-model generator (`generate_model`) since re-implementing it in C++ would
-be a separate project. All other hot-path logic (signal polling, Socket.IO
-dispatch, subprocess I/O) runs as native C++.
+Unit validation (`traverse_and_fix`) and all mock-provider lifecycle management
+are now implemented in native C++.  The `vehicle_model_manager` still invokes
+the Python `velocitas` model generator as a subprocess via `fork`+`execvp`
+(no shell — no injection surface) because re-implementing the generator itself
+in C++ would be a separate project.  All other hot-path logic runs as native C++.
 
 ---
 

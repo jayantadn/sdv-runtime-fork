@@ -5,6 +5,7 @@
 #include "vehicle_model_manager.hpp"
 
 #include <array>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -14,11 +15,15 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#include <nlohmann/json.hpp>
 
 namespace sdv {
 namespace vehicle_model {
@@ -29,13 +34,34 @@ namespace fs = std::filesystem;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// Run a shell command synchronously; throw on non-zero exit.
-static void runCommand(const std::string& cmd) {
-    int ret = ::system(cmd.c_str());
-    if (ret != 0) {
-        throw std::runtime_error("Command failed (exit " +
-                                 std::to_string(WEXITSTATUS(ret)) +
-                                 "): " + cmd);
+// Run a subprocess synchronously via fork+execvp (no shell — safe from injection).
+// args[0] is the executable (resolved via PATH); remaining entries are arguments.
+// Throws std::runtime_error on fork failure or non-zero exit.
+static void runSubprocess(const std::vector<std::string>& args) {
+    if (args.empty()) throw std::runtime_error("runSubprocess: empty argument list");
+
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& a : args) argv.push_back(a.c_str());
+    argv.push_back(nullptr);
+
+    pid_t child = ::fork();
+    if (child < 0) {
+        throw std::runtime_error(std::string("fork() failed: ") + ::strerror(errno));
+    }
+    if (child == 0) {
+        ::execvp(argv[0], const_cast<char* const*>(argv.data()));
+        ::_exit(127); // execvp failed
+    }
+
+    int status = 0;
+    while (::waitpid(child, &status, 0) < 0) {
+        if (errno != EINTR)
+            throw std::runtime_error(std::string("waitpid failed: ") + ::strerror(errno));
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        throw std::runtime_error(args[0] + " exited with status " +
+                                 std::to_string(WIFEXITED(status) ? WEXITSTATUS(status) : -1));
     }
 }
 
@@ -50,6 +76,68 @@ static std::string extractFirstClassName(const std::string& pyCode) {
     std::smatch m;
     if (std::regex_search(pyCode, m, kClassRe)) return m[1];
     return {};
+}
+
+// ---------------------------------------------------------------------------
+// loadValidUnits — parse a VSS units.yaml and return the set of valid unit keys
+// ---------------------------------------------------------------------------
+static std::unordered_set<std::string> loadValidUnits(const fs::path& yamlPath) {
+    std::unordered_set<std::string> units;
+    std::ifstream f(yamlPath);
+    if (!f) return units;
+
+    std::string line;
+    bool inUnitsSection = false;
+    while (std::getline(f, line)) {
+        if (line == "units:") { inUnitsSection = true; continue; }
+        if (!inUnitsSection) continue;
+
+        if (line.size() >= 3 && line[0] == ' ' && line[1] == ' ' && line[2] != ' ') {
+            // Top-level key under units: — everything before the first colon
+            auto colon = line.find(':', 2);
+            if (colon != std::string::npos) {
+                std::string key = line.substr(2, colon - 2);
+                while (!key.empty() && std::isspace(static_cast<unsigned char>(key.back())))
+                    key.pop_back();
+                if (!key.empty()) units.insert(key);
+            }
+        } else if (!line.empty() && line[0] != ' ' && line[0] != '#') {
+            inUnitsSection = false; // entered a different top-level section
+        }
+    }
+    return units;
+}
+
+// ---------------------------------------------------------------------------
+// traverseAndFix — walk the VSS JSON tree and assign unit "m" to any signal
+// that has a missing or unrecognised unit field (mirrors Python traverse_and_fix).
+// ---------------------------------------------------------------------------
+static void traverseAndFix(nlohmann::json& tree,
+                            const std::unordered_set<std::string>& validUnits,
+                            const std::string& currentPath = "") {
+    if (!tree.is_object()) return;
+    for (auto& [key, value] : tree.items()) {
+        if (!value.is_object()) continue;
+        std::string newPath = currentPath.empty() ? key : currentPath + "." + key;
+
+        auto typeIt = value.find("type");
+        if (typeIt != value.end() && typeIt->is_string() &&
+            typeIt->get<std::string>() != "branch") {
+            // It is a signal node — validate/fix its unit field
+            std::string unit;
+            auto unitIt = value.find("unit");
+            if (unitIt != value.end() && unitIt->is_string())
+                unit = unitIt->get<std::string>();
+            if (unit.empty() || validUnits.find(unit) == validUnits.end()) {
+                value["unit"] = "m";
+                std::cout << "Set default unit 'm' for signal " << newPath << std::endl;
+            }
+        }
+
+        auto childrenIt = value.find("children");
+        if (childrenIt != value.end() && childrenIt->is_object())
+            traverseAndFix(*childrenIt, validUnits, newPath);
+    }
 }
 
 // Fix the instantiation line in the generated __init__.py so it uses the
@@ -107,51 +195,60 @@ void restartDatabroker() {
 // ---------------------------------------------------------------------------
 // generateVehicleModel
 //
-// The velocitas model generator is a Python tool; we invoke it as a
-// subprocess rather than re-implementing it in C++.
+// 1. Parses the incoming VSS JSON and fixes invalid/missing unit fields in
+//    C++ (equiv. of Python traverse_and_fix) — no Python needed for this step.
+// 2. Writes the corrected tree to vss.json on disk.
+// 3. Invokes the velocitas Python model generator via fork+execvp (no shell,
+//    no command-injection risk; all arguments are static paths, not user data).
+// 4. Corrects the parent-class instantiation in the generated __init__.py.
+// 5. Moves the generated model into the python-packages directory.
+// 6. Optionally restarts the databroker.
 // ---------------------------------------------------------------------------
 void generateVehicleModel(const std::string& inputJson) {
-    static const fs::path kVssPath     = "/home/dev/ws/vss.json";
-    static const fs::path kGenModel    = "/home/dev/ws/gen_model";
-    static const fs::path kPkgVehicle  = "/home/dev/python-packages/vehicle";
-    static const fs::path kUnitFile    =
+    static const fs::path kVssPath    = "/home/dev/ws/vss.json";
+    static const fs::path kGenModel   = "/home/dev/ws/gen_model";
+    static const fs::path kPkgVehicle = "/home/dev/python-packages/vehicle";
+    static const fs::path kUnitFile   =
         "/home/dev/python-packages/vehicle_signal_specification/spec/units.yaml";
-    static const fs::path kIncludeDir  =
+    static const fs::path kIncludeDir =
         "/home/dev/python-packages/vehicle_signal_specification/spec";
 
-    // 1. Write vss.json
+    // 1. Parse JSON and fix invalid unit fields natively (no Python subprocess)
+    nlohmann::json data = nlohmann::json::parse(inputJson);
+    auto validUnits = loadValidUnits(kUnitFile);
+    traverseAndFix(data, validUnits);
+
+    // 2. Write corrected vss.json
     {
         std::ofstream f(kVssPath, std::ios::trunc);
         if (!f) throw std::runtime_error("Cannot write vss.json");
-        f << inputJson;
+        f << data.dump(4);
     }
 
-    // 2. Remove old vehicle package
+    // 3. Remove stale vehicle package
     if (fs::exists(kPkgVehicle)) fs::remove_all(kPkgVehicle);
 
-    // 3. Invoke Python model generator
-    std::ostringstream cmd;
-    cmd << "python3 -c \""
-        << "from velocitas.model_generator import generate_model; "
-        << "generate_model("
-        <<     "'" << kVssPath.string()          << "', "
-        <<     "['" << kUnitFile.string()         << "'], "
-        <<     "'python', "
-        <<     "'" << kGenModel.string()          << "', "
-        <<     "'vehicle', True, "
-        <<     "'" << kIncludeDir.string()        << "'"
-        << ")\"";
-    runCommand(cmd.str());
+    // 4. Invoke the velocitas Python model generator via fork+execvp.
+    //    Arguments are passed as a proper array — the shell is never involved,
+    //    eliminating any command-injection surface.
+    runSubprocess({
+        "python3", "-c",
+        "from velocitas.model_generator import generate_model;"
+        "generate_model('" + kVssPath.string() + "',"
+        "['" + kUnitFile.string() + "'],"
+        "'python','" + kGenModel.string() + "',"
+        "'vehicle',True,'" + kIncludeDir.string() + "')"
+    });
 
-    // 4. Correct parent class
+    // 5. Correct parent class in generated __init__.py
     fs::path initFile = kGenModel / "vehicle" / "__init__.py";
     if (fs::exists(initFile)) correctParentClass(initFile);
 
-    // 5. Move generated model
+    // 6. Move generated model into python-packages
     if (fs::exists(kPkgVehicle)) fs::remove_all(kPkgVehicle);
     fs::rename(kGenModel / "vehicle", kPkgVehicle);
 
-    // 6. Restart databroker (unless disabled)
+    // 7. Restart databroker (unless disabled)
     const char* disable = ::getenv("DISABLE_DATABROKER");
     if (!disable || std::string(disable).empty()) {
         restartDatabroker();

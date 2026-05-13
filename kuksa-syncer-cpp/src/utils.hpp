@@ -25,8 +25,8 @@ void writeCodeToFile(const std::string& code,
 
 // ── Mock provider lifecycle ─────────────────────────────────────────────────
 
-void stopMockService (const std::string& pidFile = "/home/dev/mockprovider.pid");
-void startMockService(const std::string& mockScript = "/home/dev/ws/mock/mockprovider.py");
+void stopMockService (const std::string& pidFile    = "/home/dev/mockprovider.pid");
+void startMockService(const std::string& binaryPath = "/home/dev/ws/kuksa-syncer-cpp/mock-provider");
 void restartMockProvider();
 
 // ── Mock signal file helpers ─────────────────────────────────────────────────

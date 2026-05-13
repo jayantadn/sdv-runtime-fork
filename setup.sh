@@ -1,5 +1,14 @@
 #!/bin/bash
-# setup_local.sh — Prepare local (non-Docker) environment for SDV-Runtime
+
+# Copyright (c) 2025 Eclipse Foundation.
+#
+# This program and the accompanying materials are made available under the
+# terms of the MIT License which is available at
+# https://opensource.org/licenses/MIT.
+#
+# SPDX-License-Identifier: MIT
+
+# setup.sh — Prepare local (non-Docker) environment for SDV-Runtime
 # Run this once before starting services with start_services.sh
 
 set -e
@@ -170,5 +179,5 @@ echo "  export RUNTIME_NAME=\"MySDVRuntime\""
 echo "  bash $SCRIPT_DIR/start_services.sh"
 echo ""
 echo "Or use the convenience wrapper:"
-echo "  bash $SCRIPT_DIR/run_local.sh"
+echo "  bash $SCRIPT_DIR/run.sh"
 echo ""

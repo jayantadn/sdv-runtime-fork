@@ -227,7 +227,11 @@ void Syncer::tickerFast() {
         if (snapshot.empty()) continue;
 
         if (!kuksa_->isConnected()) {
-            try { kuksa_->connect(); } catch (...) {}
+            try { kuksa_->connect(); } catch (const std::exception& e) {
+                std::cerr << "[tickerFast] reconnect: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[tickerFast] reconnect: unknown exception" << std::endl;
+            }
             continue;
         }
 
@@ -297,7 +301,11 @@ void Syncer::ticker() {
         // Evict and kill stale runners
         for (auto it = lsOfRunner_.begin(); it != lsOfRunner_.end(); ) {
             if (currentTime - it->startTime > kTimeToKeepRunnerAlive) {
-                try { if (it->runner) it->runner->kill(); } catch (...) {}
+                try { if (it->runner) it->runner->kill(); } catch (const std::exception& e) {
+                    std::cerr << "[ticker] evict runner kill: " << e.what() << std::endl;
+                } catch (...) {
+                    std::cerr << "[ticker] evict runner kill: unknown exception" << std::endl;
+                }
                 it = lsOfRunner_.erase(it);
             } else {
                 ++it;
@@ -376,7 +384,7 @@ void Syncer::handleDeployRequest(const json& data) {
                     data.value("cmd", "deploy-request"));
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    if (data.contains("code")) {
+    if (data.contains("code") && data["code"].is_string()) {
         utils::writeCodeToFile(data["code"].get<std::string>());
     }
 
@@ -392,11 +400,13 @@ void Syncer::handleDeployRequest(const json& data) {
 }
 
 void Syncer::handleSubscribeApis(const json& data) {
-    if (!data.contains("apis") || data["apis"].is_null()) return;
+    if (!data.contains("apis") || !data["apis"].is_array()) return;
 
     std::string requestFrom = data.value("request_from", "");
     std::vector<std::string> apis;
-    for (const auto& a : data["apis"]) apis.push_back(a.get<std::string>());
+    for (const auto& a : data["apis"]) {
+        if (a.is_string()) apis.push_back(a.get<std::string>());
+    }
 
     {
         std::lock_guard<std::mutex> lk(stateMtx_);
@@ -404,7 +414,11 @@ void Syncer::handleSubscribeApis(const json& data) {
     }
 
     if (!apis.empty()) {
-        try { appendMockSignal(apis); } catch (...) {}
+        try { appendMockSignal(apis); } catch (const std::exception& e) {
+            std::cerr << "[handleSubscribeApis] appendMockSignal: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[handleSubscribeApis] appendMockSignal: unknown exception" << std::endl;
+        }
     }
 
     emit("messageToKit-kitReply", {
@@ -442,7 +456,7 @@ void Syncer::handleListMockSignal(const json& data) {
 
 void Syncer::handleSetMockSignals(const json& data) {
     std::string requestFrom = data.value("request_from", "");
-    if (data.contains("data")) modifyMockSignal(data["data"]);
+    if (data.contains("data") && data["data"].is_array()) modifyMockSignal(data["data"]);
     utils::restartMockProvider();
     emit("messageToKit-kitReply", {
         {"kit_id",      clientId_},
@@ -455,7 +469,7 @@ void Syncer::handleSetMockSignals(const json& data) {
 
 void Syncer::handleWriteSignalsValue(const json& data) {
     std::string requestFrom = data.value("request_from", "");
-    if (data.contains("data")) writeSignalsValue(data["data"]);
+    if (data.contains("data") && data["data"].is_object()) writeSignalsValue(data["data"]);
     emit("messageToKit-kitReply", {
         {"kit_id",      clientId_},
         {"request_from", requestFrom},
@@ -468,7 +482,12 @@ void Syncer::handleWriteSignalsValue(const json& data) {
 void Syncer::handleResetSignalsValue(const json& data) {
     std::string requestFrom = data.value("request_from", "");
     std::string raw = utils::readMockSignalFile(mockSignalPath_);
-    writeSignalsValue(json::parse(raw));
+    try {
+        json parsed = json::parse(raw);
+        if (parsed.is_object()) writeSignalsValue(parsed);
+    } catch (const std::exception& e) {
+        std::cerr << "[handleResetSignalsValue] parse signal file: " << e.what() << std::endl;
+    }
     emit("messageToKit-kitReply", {
         {"kit_id",      clientId_},
         {"request_from", requestFrom},
@@ -492,7 +511,10 @@ void Syncer::handleGenerateVehicleModel(const json& data) {
     try {
         utils::stopMockService();
 
-        std::string inputJson = data.value("data", json::object()).dump();
+        if (!data.contains("data") || !data["data"].is_object()) {
+            throw std::runtime_error("generate_vehicle_model: 'data' field must be a JSON object");
+        }
+        std::string inputJson = data["data"].dump();
         vehicle_model::generateVehicleModel(inputJson);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -526,7 +548,11 @@ void Syncer::handleGenerateVehicleModel(const json& data) {
                              std::string(e.what()) +
                              "\r\nRevert back to default model"}
         });
-        try { vehicle_model::revertVehicleModel(); } catch (...) {}
+        try { vehicle_model::revertVehicleModel(); } catch (const std::exception& re) {
+            std::cerr << "[handleGenerateVehicleModel] revert also failed: " << re.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[handleGenerateVehicleModel] revert also failed: unknown exception" << std::endl;
+        }
     }
 }
 
@@ -575,7 +601,20 @@ void Syncer::handleListPythonPackages(const json& data) {
 
 void Syncer::handleInstallPythonPackages(const json& data) {
     std::string requestFrom = data.value("request_from", "");
-    std::string pkgStr      = data.value("data", "");
+    std::string pkgStr;
+    if (data.contains("data") && data["data"].is_string())
+        pkgStr = data["data"].get<std::string>();
+
+    if (pkgStr.empty()) {
+        emit("messageToKit-kitReply", {
+            {"kit_id",      clientId_},
+            {"request_from", requestFrom},
+            {"cmd",         "install_python_packages"},
+            {"result",      "Error: missing package name"},
+            {"data",        ""}
+        });
+        return;
+    }
 
     emit("messageToKit-kitReply", {
         {"kit_id",      clientId_},
@@ -612,12 +651,13 @@ void Syncer::handleInstallPythonPackages(const json& data) {
 void Syncer::handleRunPythonApp(const json& data) {
     std::string requestFrom = data.value("request_from", "");
 
-    if (!data.contains("data") || !data["data"].contains("code")) {
+    if (!data.contains("data") || !data["data"].is_object() ||
+        !data["data"].contains("code") || !data["data"]["code"].is_string()) {
         emit("messageToKit-kitReply", {
             {"kit_id",      clientId_},
             {"request_from", requestFrom},
             {"cmd",         "run_python_app"},
-            {"result",      "Error: Missing code"},
+            {"result",      "Error: Missing or invalid code field"},
             {"data",        ""}
         });
         return;
@@ -651,7 +691,11 @@ void Syncer::handleRunPythonApp(const json& data) {
             if (a.is_string()) usedApis.push_back(a.get<std::string>());
         }
         if (!usedApis.empty()) {
-            try { appendMockSignal(usedApis); } catch (...) {}
+            try { appendMockSignal(usedApis); } catch (const std::exception& e) {
+                std::cerr << "[handleRunPythonApp] appendMockSignal: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[handleRunPythonApp] appendMockSignal: unknown exception" << std::endl;
+            }
         }
     }
 
@@ -673,8 +717,20 @@ void Syncer::handleRunPythonApp(const json& data) {
 
 void Syncer::handleRunBinApp(const json& data) {
     std::string requestFrom = data.value("request_from", "");
-    std::string appName     = data.value("data", "");
-    std::string appPath     = "/home/dev/output/" + appName;
+    std::string appName;
+    if (data.contains("data") && data["data"].is_string())
+        appName = data["data"].get<std::string>();
+    if (appName.empty()) {
+        emit("messageToKit-kitReply", {
+            {"kit_id",      clientId_},
+            {"request_from", requestFrom},
+            {"cmd",         "run_bin_app"},
+            {"result",      "Error: missing app name"},
+            {"data",        ""}
+        });
+        return;
+    }
+    std::string appPath = "/home/dev/output/" + appName;
 
     if (!fs::exists(appPath)) {
         emit("messageToKit-kitReply", {
@@ -692,7 +748,11 @@ void Syncer::handleRunBinApp(const json& data) {
         for (const auto& a : data["usedAPIs"]) {
             if (a.is_string()) usedApis.push_back(a.get<std::string>());
         }
-        try { appendMockSignal(usedApis); } catch (...) {}
+        try { appendMockSignal(usedApis); } catch (const std::exception& e) {
+            std::cerr << "[handleRunBinApp] appendMockSignal: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[handleRunBinApp] appendMockSignal: unknown exception" << std::endl;
+        }
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -718,7 +778,11 @@ void Syncer::handleStopPythonApp(const json& data) {
     std::lock_guard<std::mutex> lk(stateMtx_);
     for (auto it = lsOfRunner_.begin(); it != lsOfRunner_.end(); ) {
         if (it->requestFrom == requestFrom) {
-            try { if (it->runner) it->runner->kill(); } catch (...) {}
+            try { if (it->runner) it->runner->kill(); } catch (const std::exception& e) {
+                std::cerr << "[handleStopPythonApp] runner kill: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[handleStopPythonApp] runner kill: unknown exception" << std::endl;
+            }
             it = lsOfRunner_.erase(it);
         } else {
             ++it;
@@ -794,8 +858,9 @@ bool Syncer::installDependencies(const std::string& requestFrom) {
     std::string cmd = "pip install -r " + kReqPath + " 2>&1";
     int ret = ::system(cmd.c_str());
 
-    if (ret != 0) {
-        sendAppRunReply(requestFrom, false, WEXITSTATUS(ret),
+    if (ret == -1 || !WIFEXITED(ret) || WEXITSTATUS(ret) != 0) {
+        int exitCode = (ret != -1 && WIFEXITED(ret)) ? WEXITSTATUS(ret) : -1;
+        sendAppRunReply(requestFrom, false, exitCode,
                         "Failed to install dependencies.\r\n");
         return false;
     }
@@ -812,7 +877,11 @@ json Syncer::listMockSignal() const {
     std::string raw = utils::readMockSignalFile(mockSignalPath_);
     try {
         return json::parse(raw);
+    } catch (const std::exception& e) {
+        std::cerr << "[listMockSignal] parse signal file: " << e.what() << std::endl;
+        return json::array();
     } catch (...) {
+        std::cerr << "[listMockSignal] parse signal file: unknown exception" << std::endl;
         return json::array();
     }
 }
@@ -829,7 +898,13 @@ void Syncer::modifyMockSignal(const json& signalArray) {
             if (!meta.empty()) {
                 finalSignals.push_back(sig);
             }
-        } catch (...) {}
+        } catch (const std::exception& e) {
+            std::cerr << "[modifyMockSignal] getMetadata for '" << path
+                      << "': " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[modifyMockSignal] getMetadata for '" << path
+                      << "': unknown exception" << std::endl;
+        }
     }
 
     utils::writeMockSignalFile(mockSignalPath_, finalSignals.dump(4));
@@ -841,7 +916,11 @@ void Syncer::appendMockSignal(const std::vector<std::string>& signals) {
     json curMocks;
     try {
         curMocks = json::parse(utils::readMockSignalFile(mockSignalPath_));
+    } catch (const std::exception& e) {
+        std::cerr << "[appendMockSignal] parse signal file: " << e.what() << std::endl;
+        curMocks = json::array();
     } catch (...) {
+        std::cerr << "[appendMockSignal] parse signal file: unknown exception" << std::endl;
         curMocks = json::array();
     }
 
@@ -862,7 +941,13 @@ void Syncer::appendMockSignal(const std::vector<std::string>& signals) {
                 curMocks.push_back({ {"signal", sig}, {"value", "0"} });
                 std::cout << ">>> Append new mock signal " << sig << std::endl;
             }
-        } catch (...) {}
+        } catch (const std::exception& e) {
+            std::cerr << "[appendMockSignal] getMetadata for '" << sig
+                      << "': " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[appendMockSignal] getMetadata for '" << sig
+                      << "': unknown exception" << std::endl;
+        }
     }
 
     if (hasNew) {
