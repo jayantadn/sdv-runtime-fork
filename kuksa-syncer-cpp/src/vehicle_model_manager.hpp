@@ -12,18 +12,16 @@ namespace vehicle_model {
 // ---------------------------------------------------------------------------
 // generateVehicleModel
 //
-// Ports Python vehicle_model_manager.generate_vehicle_model():
-//   1. Parses the VSS JSON and fixes invalid/missing unit fields in C++
-//      (no Python involved for this step).
+// Fully native — no Python subprocess involved.
+//   1. Parses the VSS JSON and fixes invalid/missing unit fields in C++.
 //   2. Writes the corrected vss.json to disk.
-//   3. Invokes the velocitas Python model generator via fork+execvp
-//      (no shell; arguments are static paths, eliminating injection risk).
-//   4. Corrects the parent class in the generated __init__.py.
+//   3. Generates the velocitas Python vehicle model natively in C++
+//      (walks the VSS tree and emits the __init__.py directly — no python3).
+//   4. Safety-net correctParentClass pass on the generated __init__.py.
 //   5. Moves generated model into the python-packages directory.
 //   6. Optionally restarts the databroker.
 //
-// input_json — serialised JSON string of the VSS tree (same format as the
-//              Python function receives).
+// input_json — serialised JSON string of the VSS tree.
 //
 // Throws std::runtime_error on failure.
 // ---------------------------------------------------------------------------
