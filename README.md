@@ -1,12 +1,3 @@
-<!--
-  Copyright (c) 2025 Eclipse Foundation.
-
-  This program and the accompanying materials are made available under the
-  terms of the MIT License which is available at
-  https://opensource.org/licenses/MIT.
-
-  SPDX-License-Identifier: MIT
--->
 
 # Introduction
 Want to try out SDV (Software Defined Vehicles) without installing lots of things? The sdv-runtime Docker container has everything you need to run your QM apps. It's made for people who are new to SDV and want to learn and practice without a complicated setup.
