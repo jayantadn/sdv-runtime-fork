@@ -1,3 +1,4 @@
+
 # Introduction
 Want to try out SDV (Software Defined Vehicles) without installing lots of things? The sdv-runtime Docker container has everything you need to run your QM apps. It's made for people who are new to SDV and want to learn and practice without a complicated setup.
 The `sdv-runtime` connects natively with [playground.digital.auto](https://playground.digital.auto) where you can ideation, coding and present your automotive feature.
@@ -14,7 +15,7 @@ Since it is a docker container, it can run on cloud, your PC or even on rapsberr
 - [Kit Manager](kit-manager/)
 - [Python](https://www.python.org/downloads/release/python-3100/) - `3.10`
 
-When you run this Docker container, all the tools mentioned above will be ready to use, and you will be connected to the playground natively.
+When you run this Docker container, all the tools mentioned above will be ready to use, and you will be connected to the playground natively .
 
 
 
@@ -28,6 +29,79 @@ docker run -d -e RUNTIME_PREFIX="Kit-" -e RUNTIME_NAME="MyRuntimeName" ghcr.io/e
 ```
 
 Video instruction: [https://youtu.be/HQrsGY7XLU4](https://youtu.be/HQrsGY7XLU4)
+
+---
+
+# How to run kuksa-syncer-cpp (native C++ runtime)
+
+The C++ syncer replaces the Python `kuksa-syncer` with a native binary that requires no Python runtime on the host.
+
+## Prerequisites
+
+Run `setup.sh` once to install Python/runtime dependencies (handled automatically):
+
+```bash
+bash setup.sh
+```
+
+The C++ build additionally requires these system packages (not installed by `setup.sh`):
+
+```bash
+sudo apt-get install -y \
+    build-essential cmake \
+    libgrpc++-dev libprotobuf-dev \
+    protobuf-compiler protobuf-compiler-grpc \
+    libssl-dev
+```
+
+## Build
+
+```bash
+cd kuksa-syncer-cpp
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+```
+
+This produces three binaries under `build/`:
+
+| Binary | Purpose |
+|---|---|
+| `kuksa-syncer` | Syncer for `http://` Kit Server URLs |
+| `kuksa-syncer-tls` | Syncer for `https://` Kit Server URLs (default) |
+| `mock-provider` | C++ mock signal provider (replaces `mockprovider.py`) |
+
+## Run (convenience wrapper)
+
+The easiest way is to use the provided script which handles environment setup and selects the correct binary automatically:
+
+```bash
+# Default — connects to https://kit.digitalauto.tech
+bash run.sh MyRuntimeName
+```
+
+## Run (manual)
+
+```bash
+# HTTPS (default Kit Server)
+RUNTIME_NAME=MyRuntime SYNCER_SERVER_URL=https://kit.digitalauto.tech \
+    ./kuksa-syncer-cpp/build/kuksa-syncer-tls
+
+# Start the mock provider separately (reads signals.json)
+MOCK_SIGNAL=./mock/signals.json \
+    ./kuksa-syncer-cpp/build/mock-provider
+```
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `RUNTIME_NAME` | `MyRuntime` | Runtime display name shown on the Kit Server |
+| `RUNTIME_PREFIX` | `Runtime-` | Prefix prepended to the display name |
+| `SYNCER_SERVER_URL` | `https://kit.digitalauto.tech` | Kit Server URL |
+| `MOCK_SIGNAL` | `/home/dev/ws/mock/signals.json` | Path to the mock signals JSON file |
+| `DISABLE_DATABROKER` | _(unset)_ | Set to any value to skip databroker health checks |
+
+---
 
 ### Arguments for setting runtime name
 `$RUNTIME_NAME`: this is the ID to add your runtime to playground.digital.auto.
@@ -73,7 +147,7 @@ docker buildx create --driver docker-container --driver-opt network=host --drive
 
 docker buildx use mybuilder
 
-docker buildx build --push --platform linux/amd64,linux/arm64 -t eclipse-autowrx/sdv-runtime:latest -f Dockerfile .
+docker buildx build --push --platform linux/amd64,linux/arm64 -t eclipse-autowrx/sdv-runtime:latest -f Dockerfile.
 ```
 
 If you're outside of Bosch's enterprise network, you can skip the `http_proxy https_proxy` driver option. Otherwise, make sure you set up your local proxy beforehand.

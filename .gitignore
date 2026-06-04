@@ -14,3 +14,5 @@ data/python-packages/
 data/custom-models/
 
 kuksa_syncer_ref/
+kuksa-syncer-cpp/build
+.local-packages/
